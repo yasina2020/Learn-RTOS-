@@ -10,9 +10,11 @@
 
 
 
+# RT_Thread
+
 ## RT-Thread内存分布
 
-硬件MCU包括ROM和RAM，ROM就是片内Falsh，RAM相当于运行内存。
+硬件MCU包括ROM和RAM，ROM就是片内Flash，RAM相当于运行内存。
 
 程序编译好之后会有
 
@@ -250,6 +252,10 @@ RTOS 内核和演示应用程序源代码使用以下惯例:
 
 ![image-20240308081251894](readme.assets/image-20240308081251894.png)
 
+-   运行状态
+
+    调用`taskYIELD()`会通知调度器立即进行任务切换，该任务进入就绪状态。
+
 -   准备就绪
 
     准备就绪任务指那些**能够执行（它们不处于阻塞或挂起状态）， 但目前没有执行的任务**， 因为同等或更高优先级的不同任务已经处于运行状态。
@@ -317,7 +323,7 @@ RTOS调度器在启动时，会自动创建空闲任务（优先级最低），�
 
 通常使用空闲钩子函数将微控制器 CPU 置于 节能模式。
 
-### 示例：
+### 相关API示例：
 
 #### 创建任务：
 
@@ -367,7 +373,293 @@ void vTaskSuspend( TaskHandle_t xTaskToSuspend );
 -   别的任务调用：vTaskResume
 -   中断程序调用：xTaskResumeFromISR
 
+#### 改变任务优先级
+
+```c
+/*
+* xTaskHandle pxTask  任务句柄
+* unsigned portBASE_TYPE uxNewPriority 新的优先级
+*/
+void vTaskPrioritySet( xTaskHandle pxTask, unsigned portBASE_TYPE uxNewPriority ); 
+
+/*
+* xTaskHandle pxTask 任务句柄
+* 返回值是该任务的优先级
+*/
+unsigned portBASE_TYPE uxTaskPriorityGet( xTaskHandle pxTask );
+```
+
+#### 延时函数
+
+`FreeRTOS`提供了两个系统延时函数：相对延时函数`vTaskDelay()`和绝对延时`vTaskDelayUntil()`。
+
+这两个延时函数和自己实现的延时函数不同，**这两个延时函数一旦被调用，当前任务会立马进入阻塞状态**，而自己写的延时函数(以for循环等形式实现的软件延时)会被当做有效任务而一直执行。
+
+**相对延时**是指 每次延时都是从任务执行函数vTaskDelay()开始，延时指定的时间结束；
+**绝对延时**是指 每隔指定的时间，执行一次调用vTaskDelayUntil()函数的任务。换句话说：任务以固定的频率执行。
+
+```
+/*
+*调用vTaskDelay()函数后，任务会进入阻塞状态，vTaskDelay()函数的参数xTicksToDelay表示延时多少个系统节拍时钟周期。在文件FreeRTOSConfig.h中，宏INCLUDE_vTaskDelay 必须设置成1，此函数才能有效。
+*  vTaskDelay( 250 / portTICK_RATE_MS );
+*
+*/
+void vTaskDelay( portTickType xTicksToDelay );
+
+
+void vTaskDelayUntil( portTickType * pxPreviousWakeTime, portTickType xTimeIncrement );
+
+
+
+```
+
+| 参数               | 说明                                                         |
+| ------------------ | :----------------------------------------------------------- |
+| pxPreviousWakeTime | 指针，指向一个变量(指针说明这个变量即可以当做输入类型的，也可以当做输出类型的)。该变量保存任务最后一次解除阻塞的时间。第一次使用前，该变量必须初始化为当前时间。之后这个变量会在vTaskDelayUntil()函数内自动更新。 |
+| xTimeIncrement     | 周期循环时间。当时间等于(*pxPreviousWakeTime + xTimeIncrement)时，任务解除阻塞。如果不改变参数xTimeIncrement的值，调用该函数的任务会按照固定频率执行。 |
+
+## 队列管理
+
+### 概念
+
+
+
+
+
+### 相关API示例
+
+#### 创建队列
+
+队列由声明为 xQueueHandle 的变量进行引用。xQueueCreate()用于创建一个队列，并返回一个 xQueueHandle 句柄以便于对其创建的队列进行引用。
+
+当创建队列时，FreeRTOS 从堆空间中分配内存空间。分配的空间用于存储队列数据结构本身以及队列中包含的数据单元。如果内存堆中没有足够的空间来创建队列，xQueueCreate()将返回 NULL。
+
+```c
+xQueueHandle xQueueCreate( unsigned portBASE_TYPE uxQueueLength, 
+unsigned portBASE_TYPE uxItemSize );
+/*
+uxQueueLength 队列能够存储的最大单元数目，即队列深度。
+uxItemSize 队列中数据单元的长度，以字节为单位。
+返回值 	NULL 表示没有足够的堆空间分配给队列而导致创建失败。
+		  非NULL表示队列创建成功。此返回值应当保存下来，以作为操作此队列的句柄。
+*/
+```
+
+#### 写队列
+
+`xQueueSendToBack()`用于将数据发送到队列尾，相当于`xQueueSend()` 
+
+`xQueueSendToFront()`用于将数据发送到队列首。
+
+在中断服务例程中调用系统提供中断安全版本的 `xQueueSendToFrontFromISR()`与`xQueueSendToBackFromISR()`。
+
+```c
+portBASE_TYPE xQueueSendToFront( xQueueHandle xQueue, const void * pvItemToQueue, portTickType xTicksToWait );
+portBASE_TYPE xQueueSendToBack( xQueueHandle xQueue, const void * pvItemToQueue, portTickType xTicksToWait );
+/*
+xQueue  队列句柄
+pvItemToQueue	指向要复制到队列中数据的指针
+xTickToWait		超时时间 
+					0：立即返回
+					portMAX_DELAY且宏INCLUDE_vTaskSuspend 为 1：无限制
+*/
+```
+
+
+
+#### 读队列
+
+xQueueReceive()用于从队列中接收(读取）数据单元。接收到的单元同时会从队列中删除。
+
+xQueuePeek()从队列首接收到数据后，不会修改队列中的数据，也不会改变数据在队列中的存储序顺。
+
+中断安全版本：xQueueReceiveFromISR()
+
+```c
+portBASE_TYPE xQueueReceive( xQueueHandle xQueue, const void * pvBuffer, portTickType xTicksToWait );
+portBASE_TYPE xQueuePeek( xQueueHandle xQueue, const void * pvBuffer, portTickType xTicksToWait );
+/*
+pvBuffer	接收缓存指针。其指向一段内存区域，用于接收从队列中拷贝来的数据。数据单元的长度在创建队列时就已经被设定，所以该指针指向的内存区域大小应当足够保存一个数据单元。
+*/
+
+    
+    
+```
+
+
+
+#### 查询队列
+
+uxQueueMessagesWaiting()用于**查询队列中当前有效数据单元个数。**
+
+中断安全版本 uxQueueMessagesWaitingFromISR()。
+
+```c
+unsigned portBASE_TYPE uxQueueMessagesWaiting( xQueueHandle xQueue );
+```
+
+#### 使用队列传递复合类型
+
+```cpp
+typedef enum
+{
+	eSender1,
+	eSender2
+} DataSource_t;
+
+
+typedef struct
+{
+	uint8_t ucValue;//数据值
+	DataSource_t eDataSource;//数据类型
+}xData;
+
+static const xData xStructsToSend[2]=
+{
+	{100,eSender1},
+	{200,eSender2}
+};
+
+//发送任务
+static void vSenderTask(void * p)
+{
+	BaseType_t xStatus;//队列写入状态
+	while(1)
+	{
+		xStatus = xQueueSendToBack(xQueue,p,100 / portTICK_RATE_MS);
+		if(xStatus != pdPASS)
+		{
+			printf(""Could not send to the queue.\r\n");
+		}
+	
+	}
+}
+//接收任务
+static void vReceiverTask(void *p)
+{
+	xData xRev;
+	BaseType_t xStatus;//队列状态
+	while(1)
+	{
+		if(uxQueueMessagesWaiting(xQueue) != 3)
+		{
+			printf("队列不满\r\n");
+		}
+		xStatus = xQueueReceive(xQueue,&xRev,0);
+		if(xStatus == pdPASS)
+		{
+			if(xRev.eDataSource == eSender1)
+			{
+				printf("数据源：eSender1；数据值：%d \r\n",&xRev.ucValue);
+			}
+			else
+			{
+				printf("数据源：eSender2；数据值：%d \r\n",&xRev.ucValue);
+			}
+		}
+		else
+		{
+			printf("出错，无法接收\r\n");
+		}
+	}
+}
+
+
+int main()
+{
+	...
+	
+	xQueue = xQueueCreate(3,sizeof(xData))
+	if(xQueue != NULL)
+	{
+		xTaskCreate(vSenderTask,"sender1",100,&(xStructsToSend[0]),2,NULL);
+		xTaskCreate(vSenderTask,"sender2",100,&(xStructsToSend[1]),2,NULL);
+		xTaskCreate(vReceiverTask,"Receiver1",100,NULL,1,NULL);
+		vTaskStartScheduler();
+	}
+	else
+	{
+	//TODO WHEN QUEUE CREATE FAILEd
+	}
+	
+	
+	while(1);
+}
+
+
+```
+
+
+
+## 中断管理
+
+### 延迟中断处理
+
+#### 采用二值信号量同步
+
+二值信号量可以在某个特殊的中断发生时，让任务解除阻塞，相当于让任务与中断同步。这样就可以让中断事件处理量大的工作在同步任务中完成，中断服务例程(ISR)中只是快速处理少部份工作。如此，中断处理可以说是被”推迟(deferred)”到一个”处理(handler)”任务。
+
+如果某个中断处理要求特别紧急，其延迟处理任务的优先级可以设为最高，以保证延迟处理任务随时都抢占系统中的其它任务。这样，延迟处理任务就成为其对应的 ISR退出后第一个执行的任务，在时间上紧接着 ISR 执行，相当于所有的处理都在 ISR 中完成一样。
+
+在这种中断同步的情形下，信号量可以看作是一个**深度为 1 的队列**。这个队列由于最多只能保存一个数据单元，所以其不为空则为满(所谓”二值”)。延迟处理任务调用xSemaphoreTake()时，等效于带阻塞时间地读取队列，如果队列为空的话任务则进入阻塞态。当事件发生后，**ISR 简单地通过调用 xSemaphoreGiveFromISR()放置一个令牌(信号量)到队列中，使得队列成为满状态**。这也使得**延迟处理任务切出阻塞态，并移除令牌，使得队列再次成为空。当任务完成处理后，再次读取队列，发现队列为空，又进入阻塞态，**等待下一次事件发生。
+
+#### 二值信号量API
+
+```c
+//创建二值信号量
+void vSemaphoreCreateBinary( xSemaphoreHandle xSemaphore );
+```
+
+延迟任务读信号量，发现不可用，就进入阻塞。中断来了之后给信号量，延迟任务发现可用，就会执行，然后把信号量拿走，这个时候就有不可用了，继续阻塞等下一次ISR给信号量。
+
+```c
+//获取 信号量，信号量有效时才可以被获取
+//互斥信号量不能被获取，ISR中不能使用该函数
+portBASE_TYPE xSemaphoreTake( xSemaphoreHandle xSemaphore, portTickType xTicksToWait ); 
+
+
+
+```
+
+​		对某个信号量而言，可能有不止一个任务处于阻塞态在等待其有效。调用 xSemaphoreGiveFromISR() 会让信号量变为有效，所以会让其中一个等待任务切出阻塞态。如果调用 xSemaphoreGiveFromISR() 使得一个任务解除阻塞，并且这个任务的优先级高于当前任务(也就是被中断的任务)，那么 xSemaphoreGiveFromISR()会在函数内部将 *pxHigherPriorityTaskWoken 设 为pdTRUE。
+​		如果 xSemaphoreGiveFromISR() 将此值设为pdTRUE，则在中断退出前应当进行一次上下文切换。这样才能保证中断直接返回到就绪态任务中优先级最高的任务中。
+
+```
+//给 信号量
+//互斥信号量不能用
+//专门在ISR中使用
+portBASE_TYPE xSemaphoreGiveFromISR( xSemaphoreHandle xSemaphore, portBASE_TYPE *pxHigherPriorityTaskWoken);
+```
+
+
+
+#### 例程：利用二值信号量对任务和中断进行中断
+
+
+
+
+
+
+
+### 相关API示例
+
+
+
+## 资源管理
+
+### 概念
+
+
+
+### 相关API示例
+
+
+
 ## 内存管理
 
+### 概念
 
+
+
+### 相关API示例
 
